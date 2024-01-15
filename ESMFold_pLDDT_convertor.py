@@ -1,3 +1,9 @@
+#####################################################
+#    Changes the pLDDT values in bfactor column     #
+#    Needed for the EMSFold files from esmatlas     #
+#    Before you color them in ChimeraX              #
+#####################################################
+
 import tkinter as tk
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import os
