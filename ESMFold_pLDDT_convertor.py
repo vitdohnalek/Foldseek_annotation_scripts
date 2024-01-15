@@ -38,7 +38,7 @@ root = TkinterDnD.Tk()
 root.geometry("600x150")
 
 # Set the title of the window
-root.title("ESMFold pLDDT Converter")
+root.title("ESMFold pLDDT Convertor")
 
 # Set up the drag-and-drop functionality
 root.drop_target_register(DND_FILES)
