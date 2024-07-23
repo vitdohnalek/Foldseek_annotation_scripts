@@ -12,7 +12,7 @@ def send_sequence(file):
 
 def main():
     files = glob.glob("*.fasta")
-    max_workers = 8
+    max_workers = 3
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_file = {executor.submit(send_sequence, file): file for file in files}
