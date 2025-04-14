@@ -16,8 +16,6 @@ def get_results(compressed_file=""):
     os.system("rm alis_afdb-swissprot_report.m8")
     os.system("rm alis_afdb50_report.m8")
     os.system("rm alis_afdb-proteome_report.m8")
-    os.system("rm alis_BFVD_report.m8")
-    os.system("rm alis_BFVD.m8")
 
     def check_db_results(file=""):
 
@@ -88,7 +86,7 @@ for i in range(0, len(cif_files), batch_size):
                 files={"q": f},
                 data={
                     "mode": "3diaa",
-                    "database[]": ["BFVD", "afdb50", "afdb-swissprot", "afdb-proteome"]
+                    "database[]": ["afdb50", "afdb-swissprot", "afdb-proteome"]
                 }
             )
 
