@@ -98,19 +98,27 @@ for i in range(0, len(cif_files), batch_size):
             # Polling for status
             status_url = f"https://search.foldseek.com/api/ticket/{ticket_id}"
             while True:
-                status_response = requests.get(status_url)
-                status_data = status_response.json()
-                status = status_data["status"]
-                print(f"    Status: {status}")
-                if status == "COMPLETE":
-                    print("Job complete.")
-                    os.system(f"curl -L https://search.foldseek.com/api/result/download/{ticket_id} -o {seq_ID}.gz")
-                    get_results(f"{seq_ID}.gz")
-                    break
-                elif status == "ERROR":
-                    print("Error occurred.")
-                    break
-                time.sleep(10)  # wait X seconds before checking again
+                try:
+                    status_response = requests.get(status_url)
+                    status_data = status_response.json()
+                    status = status_data.get("status", "UNKNOWN")
+                    print(f"    Status: {status}")
+
+                    if status == "COMPLETE":
+                        print("Job complete.")
+                        os.system(f"curl -L https://search.foldseek.com/api/result/download/{ticket_id} -o {seq_ID}.gz")
+                        get_results(f"{seq_ID}.gz")
+                        break
+                    elif status == "ERROR":
+                        print("Error occurred.")
+                        break
+                    elif status == "UNKNOWN":
+                        print("Unknown status, will retry.")
+                except Exception as e:
+                    print(f"    Error while checking status: {e}")
+                    print("    Will retry after 10 seconds...")
+
+                time.sleep(10)  # wait before checking again to not spam the server
         elif response.status_code == 429:
             time.sleep(120)
         else:
