@@ -4,8 +4,8 @@ import time
 import os
 
 
-# Extracts results and deleted unnecessary files
-def get_results(compressed_file=""):
+# Extracts results and returns best hits + all hits per database
+def get_results(compressed_file="", all_hits_dir=""):
     gz_file = compressed_file
     seq_ID = gz_file[:-3]
 
@@ -22,7 +22,7 @@ def get_results(compressed_file=""):
         best_hit = "None"
         all_hits = []
 
-        with open(file, "r") as f:  
+        with open(file, "r") as f:
             for l in f:
                 if not "\t" in l:
 
@@ -60,16 +60,38 @@ def get_results(compressed_file=""):
     os.system("rm alis_afdb-swissprot.m8")
     os.system(f"rm alis_afdb-proteome.m8")
 
-    tsv = "Protein ID\tSwiss-Prot\tUniProt\tAlphaFold-Proteomes\tMost frequent hit\tMost frequent hit n\n"
-    tsv += seq_ID + "\t" + best_swissprot_hit + "\t"
-    tsv += best_afdb50_hit + "\t" + best_proteomes_hit + "\t"
-    tsv += most_common_hit + "\t" + most_common_hit_n + "\n"
+    # Write per-structure all-hits TSV
+    all_hits_tsv = "Database\tAnnotation\n"
+    for hit in swiss_hits:
+        all_hits_tsv += "Swiss-Prot\t" + hit + "\n"
+    for hit in afdb50_hits:
+        all_hits_tsv += "UniProt\t" + hit + "\n"
+    for hit in proteome_hits:
+        all_hits_tsv += "AlphaFold-Proteomes\t" + hit + "\n"
 
-    with open(f"{seq_ID}_foldseek.tsv", "w") as f:
-        f.write(tsv)
+    with open(os.path.join(all_hits_dir, f"{seq_ID}_all_hits.tsv"), "w") as f:
+        f.write(all_hits_tsv)
+
+    # Return best-hits row for the combined table
+    return [seq_ID, best_swissprot_hit, best_afdb50_hit, best_proteomes_hit,
+            most_common_hit, most_common_hit_n]
+
 
 # Get all CIF files in the current directory
 cif_files = glob.glob("./done/*.cif") # pdb fromat works too
+
+# Set up output directories
+results_dir = "./results"
+all_hits_dir = os.path.join(results_dir, "all_hits")
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+if not os.path.exists(all_hits_dir):
+    os.makedirs(all_hits_dir)
+
+# Combined best-hits TSV
+best_hits_path = os.path.join(results_dir, "best_hits.tsv")
+with open(best_hits_path, "w") as f:
+    f.write("Protein ID\tSwiss-Prot\tUniProt\tAlphaFold-Proteomes\tMost frequent hit\tMost frequent hit n\n")
 
 # Process files in batches of 5
 batch_size = 5
@@ -107,7 +129,10 @@ for i in range(0, len(cif_files), batch_size):
                     if status == "COMPLETE":
                         print("Job complete.")
                         os.system(f"curl -L https://search.foldseek.com/api/result/download/{ticket_id} -o {seq_ID}.gz")
-                        get_results(f"{seq_ID}.gz")
+                        row = get_results(f"{seq_ID}.gz", all_hits_dir)
+                        # Append to combined best-hits TSV
+                        with open(best_hits_path, "a") as f:
+                            f.write("\t".join(row) + "\n")
                         break
                     elif status == "ERROR":
                         print("Error occurred.")
@@ -125,3 +150,7 @@ for i in range(0, len(cif_files), batch_size):
             print(f"Failed to upload {file}, status code: {response.status_code}")
 
     time.sleep(20)
+
+print(f"\nResults saved to {results_dir}/")
+print(f"  Best hits: {best_hits_path}")
+print(f"  All hits per structure: {all_hits_dir}/")
