@@ -88,20 +88,30 @@ if not os.path.exists(results_dir):
 if not os.path.exists(all_hits_dir):
     os.makedirs(all_hits_dir)
 
+# Skip already predicted structures
+already_done = {f.split("/")[-1].replace("_all_hits.tsv", "") for f in glob.glob(os.path.join(all_hits_dir, "*_all_hits.tsv"))}
+cif_files = [f for f in cif_files if f.split("/")[-1][:-4] not in already_done]
+if already_done:
+    print(f"Skipping {len(already_done)} already predicted structure(s).")
+print(f"{len(cif_files)} structure(s) to process.")
+
 # Combined best-hits TSV
 best_hits_path = os.path.join(results_dir, "best_hits.tsv")
-with open(best_hits_path, "w") as f:
-    f.write("Protein ID\tSwiss-Prot\tUniProt\tAlphaFold-Proteomes\tMost frequent hit\tMost frequent hit n\n")
+if not os.path.exists(best_hits_path):
+    with open(best_hits_path, "w") as f:
+        f.write("Protein ID\tSwiss-Prot\tUniProt\tAlphaFold-Proteomes\tMost frequent hit\tMost frequent hit n\n")
 
-# Process files in batches of 5
+# Process files in batches
 batch_size = 5
 for i in range(0, len(cif_files), batch_size):
     batch = cif_files[i:i + batch_size]
-    print(f"\nUploading batch {i // batch_size + 1}:")
+    print(f"\nBatch {i // batch_size + 1}: uploading {len(batch)} structure(s)...")
 
+    # Step 1: Submit all files in the batch
+    pending = {}  # ticket_id -> seq_ID
     for file in batch:
         seq_ID = file.split("/")[-1][:-4]
-        print(f"  Uploading: {file}")
+        print(f"  Uploading: {seq_ID}")
         with open(file, 'rb') as f:
             response = requests.post(
                 "https://search.foldseek.com/api/ticket",
@@ -113,43 +123,60 @@ for i in range(0, len(cif_files), batch_size):
             )
 
         if response.status_code == 200:
-            result = response.json()
-            ticket_id = result["id"]
-            print(f"    Ticket ID: {ticket_id}")
-
-            # Polling for status
-            status_url = f"https://search.foldseek.com/api/ticket/{ticket_id}"
-            while True:
-                try:
-                    status_response = requests.get(status_url)
-                    status_data = status_response.json()
-                    status = status_data.get("status", "UNKNOWN")
-                    print(f"    Status: {status}")
-
-                    if status == "COMPLETE":
-                        print("Job complete.")
-                        os.system(f"curl -L https://search.foldseek.com/api/result/download/{ticket_id} -o {seq_ID}.gz")
-                        row = get_results(f"{seq_ID}.gz", all_hits_dir)
-                        # Append to combined best-hits TSV
-                        with open(best_hits_path, "a") as f:
-                            f.write("\t".join(row) + "\n")
-                        break
-                    elif status == "ERROR":
-                        print("Error occurred.")
-                        break
-                    elif status == "UNKNOWN":
-                        print("Unknown status, will retry.")
-                except Exception as e:
-                    print(f"    Error while checking status: {e}")
-                    print("    Will retry after 10 seconds...")
-
-                time.sleep(10)  # wait before checking again to not spam the server
+            ticket_id = response.json()["id"]
+            pending[ticket_id] = seq_ID
+            print(f"    Ticket: {ticket_id}")
         elif response.status_code == 429:
+            print("  Rate limited, waiting 120s...")
             time.sleep(120)
+            # Retry this file
+            with open(file, 'rb') as f:
+                response = requests.post(
+                    "https://search.foldseek.com/api/ticket",
+                    files={"q": f},
+                    data={
+                        "mode": "3diaa",
+                        "database[]": ["afdb50", "afdb-swissprot", "afdb-proteome"]
+                    }
+                )
+            if response.status_code == 200:
+                ticket_id = response.json()["id"]
+                pending[ticket_id] = seq_ID
+                print(f"    Ticket: {ticket_id}")
+            else:
+                print(f"  Failed to upload {seq_ID}, status code: {response.status_code}")
         else:
-            print(f"Failed to upload {file}, status code: {response.status_code}")
+            print(f"  Failed to upload {seq_ID}, status code: {response.status_code}")
 
-    time.sleep(20)
+    # Step 2: Poll all pending tickets until all are done
+    while pending:
+        time.sleep(10)
+        done_tickets = []
+        for ticket_id, seq_ID in pending.items():
+            try:
+                status_response = requests.get(f"https://search.foldseek.com/api/ticket/{ticket_id}")
+                status = status_response.json().get("status", "UNKNOWN")
+
+                if status == "COMPLETE":
+                    print(f"  {seq_ID}: complete, downloading results...")
+                    os.system(f"curl -sL https://search.foldseek.com/api/result/download/{ticket_id} -o {seq_ID}.gz")
+                    row = get_results(f"{seq_ID}.gz", all_hits_dir)
+                    with open(best_hits_path, "a") as f:
+                        f.write("\t".join(row) + "\n")
+                    done_tickets.append(ticket_id)
+                elif status == "ERROR":
+                    print(f"  {seq_ID}: server error.")
+                    done_tickets.append(ticket_id)
+            except Exception as e:
+                print(f"  {seq_ID}: poll error ({e}), will retry...")
+
+        for ticket_id in done_tickets:
+            del pending[ticket_id]
+
+        if pending:
+            print(f"  Waiting on {len(pending)} job(s)...")
+
+    time.sleep(5)  # brief pause between batches
 
 print(f"\nResults saved to {results_dir}/")
 print(f"  Best hits: {best_hits_path}")
