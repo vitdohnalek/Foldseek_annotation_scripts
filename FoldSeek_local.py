@@ -30,9 +30,8 @@ def get_results(compressed_file="", all_hits_dir=""):
 
                 else:
                     line = l.split("\t")
-                    target = line[1].split()[0]
-                    # Header looks like "sp|P12345|NAME ...": take the accession
-                    uniprot_id = target.split("|")[1] if "|" in target else target
+                    # Header looks like "AF-P12345-F1-model_v6": take the accession
+                    uniprot_id = line[1].split()[0].split("-")[1]
                     annotation = " ".join(line[1].split()[1:])
                     probability = float(line[10])
 
