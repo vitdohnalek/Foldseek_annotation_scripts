@@ -30,15 +30,18 @@ def get_results(compressed_file="", all_hits_dir=""):
 
                 else:
                     line = l.split("\t")
+                    target = line[1].split()[0]
+                    # Header looks like "sp|P12345|NAME ...": take the accession
+                    uniprot_id = target.split("|")[1] if "|" in target else target
                     annotation = " ".join(line[1].split()[1:])
                     probability = float(line[10])
 
                     if not "uncharacterized" in annotation.lower() and not "hypothetical" in annotation.lower() and not "putative" in annotation.lower() and not "predicted" in annotation.lower():
                         if probability >= 0.5 and best_hit == "None":
                             best_hit = annotation
-                            all_hits.append(annotation)
+                            all_hits.append((uniprot_id, annotation))
                         elif probability >= 0.5:
-                            all_hits.append(annotation)
+                            all_hits.append((uniprot_id, annotation))
 
         return best_hit, all_hits
 
@@ -49,9 +52,10 @@ def get_results(compressed_file="", all_hits_dir=""):
     all_hits = swiss_hits + afdb50_hits + proteome_hits
 
     if len(all_hits) > 0:
-        # Most common element finder
-        most_common_hit = max(set(all_hits), key=all_hits.count)
-        most_common_hit_n = str(all_hits.count(most_common_hit))
+        # Most common element finder (by annotation, ignoring the ID)
+        annotations = [a for _, a in all_hits]
+        most_common_hit = max(set(annotations), key=annotations.count)
+        most_common_hit_n = str(annotations.count(most_common_hit))
     else:
         most_common_hit = "None"
         most_common_hit_n = "0"
@@ -61,13 +65,13 @@ def get_results(compressed_file="", all_hits_dir=""):
     os.system(f"rm alis_afdb-proteome.m8")
 
     # Write per-structure all-hits TSV
-    all_hits_tsv = "Database\tAnnotation\n"
-    for hit in swiss_hits:
-        all_hits_tsv += "Swiss-Prot\t" + hit + "\n"
-    for hit in afdb50_hits:
-        all_hits_tsv += "UniProt\t" + hit + "\n"
-    for hit in proteome_hits:
-        all_hits_tsv += "AlphaFold-Proteomes\t" + hit + "\n"
+    all_hits_tsv = "Database\tUniProt ID\tAnnotation\n"
+    for uid, hit in swiss_hits:
+        all_hits_tsv += "Swiss-Prot\t" + uid + "\t" + hit + "\n"
+    for uid, hit in afdb50_hits:
+        all_hits_tsv += "UniProt\t" + uid + "\t" + hit + "\n"
+    for uid, hit in proteome_hits:
+        all_hits_tsv += "AlphaFold-Proteomes\t" + uid + "\t" + hit + "\n"
 
     with open(os.path.join(all_hits_dir, f"{seq_ID}_all_hits.tsv"), "w") as f:
         f.write(all_hits_tsv)
